@@ -256,11 +256,17 @@ class YoloBody(nn.Module):
 
         self.conv_for_P4 = Conv(transition_channels * 32, transition_channels * 8)
         self.down_sample2 = Transition_Block(transition_channels * 8, transition_channels * 8)
-        self.conv_for_P4_all = Conv(transition_channels * 16, transition_channels * 8)
+        self.multi_for_P4 = Multi_Concat_Block(transition_channels * 16, panet_channels * 4,
+                                               transition_channels * 8, e=e, n=n, ids=ids)
+        # self.conv_for_P4_all = Conv(transition_channels * 16, transition_channels * 8)
+        self.multi_for_P5 = Multi_Concat_Block(transition_channels * 20, panet_channels * 8,
+                                               transition_channels * 16, e=e, n=n, ids=ids)
+        self.multi_for_P3 = Multi_Concat_Block(transition_channels * 12, panet_channels * 2,
+                                               transition_channels * 4, e=e, n=n, ids=ids)
 
-        self.rep_conv_1 = conv(transition_channels * 12, transition_channels * 8, 3, 1)
+        self.rep_conv_1 = conv(transition_channels * 4, transition_channels * 8, 3, 1)
         self.rep_conv_2 = conv(transition_channels * 8, transition_channels * 16, 3, 1)
-        self.rep_conv_3 = conv(transition_channels * 20, transition_channels * 32, 3, 1)
+        self.rep_conv_3 = conv(transition_channels * 16, transition_channels * 32, 3, 1)
 
         self.yolo_head_P3 = nn.Conv2d(transition_channels * 8, len(anchors_mask[2]) * (5 + num_classes), 1)
         self.yolo_head_P4 = nn.Conv2d(transition_channels * 16, len(anchors_mask[1]) * (5 + num_classes), 1)
@@ -300,23 +306,25 @@ class YoloBody(nn.Module):
 
         P4 = feat2
         # print(P4.shape) # 1024, 40, 40
-        P4_conv = self.conv_for_P4(P4)
+        P4 = self.conv_for_P4(P4)
         # print(P4_conv.shape)  # 512, 40, 40
-        P4_all = torch.cat((P5_upsample, P3_downsample, P4_conv), dim=1)
+        P4 = torch.cat((P5_upsample, P3_downsample, P4), dim=1)
         # print(P4_all.shape) # 512, 40, 40
-        P4_all_conv = self.conv_for_P4_all(P4_all)
+        P4 = self.multi_for_P4(P4)
         # print(P4_all_conv.shape) # 256, 40, 40
-        P4_upsample = self.upsample(P4_all_conv)
+        P4_upsample = self.upsample(P4)
         # print(P4_upsample.shape) # 256, 80, 80
-        P4_downsample = self.down_sample2(P4_all_conv)
+        P4_downsample = self.down_sample2(P4)
         # print(P4_downsample.shape) # 512, 20, 20
 
-        P5 = torch.cat((P5_conv, P4_downsample), dim=1)
-        # print(P5.shape)  # 640, 20, 20
-        P4 = P4_all_conv
-        # print(P4.shape)  # 256, 40, 40
         P3 = torch.cat((P3_conv, P4_upsample), dim=1)
         # print(P3.shape)  # 384, 80, 80
+        P3 = self.multi_for_P3(P3)
+        # print(P3.shape) # 128, 80, 80
+        P5 = torch.cat((P5_conv, P4_downsample), dim=1)
+        # print(P5.shape)  # 640, 20, 20
+        P5 = self.multi_for_P5(P5)
+        # print(P5.shape) # 512, 20, 20
 
         P3 = self.rep_conv_1(P3)
         P4 = self.rep_conv_2(P4)
@@ -333,6 +341,7 @@ class YoloBody(nn.Module):
         out0 = self.yolo_head_P5(P5)
 
         return [out0, out1, out2]
+
 
 if __name__ == '__main__':
     yolo_body = YoloBody([[6, 7, 8], [3, 4, 5], [0, 1, 2]], 80, 'l')
